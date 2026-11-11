@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dark Zone MD — Pairing</title>
+<style>
+  :root{
+    --bg:#0a0c10; --card:#12151d; --line:#232836; --text:#e8eaf2; --muted:#9aa3b8;
+    --accent:#e8533f; --accent2:#ff7a5c; --ok:#2fbf71; --err:#ff5252;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:radial-gradient(1000px 500px at 50% -10%,#1a0f0d 0%,var(--bg) 55%);
+    color:var(--text);font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:28px 16px 40px}
+  .logo{width:104px;height:104px;border-radius:50%;border:2px solid var(--line);
+    box-shadow:0 0 34px rgba(232,83,63,.25);object-fit:cover;background:#000}
+  h1{margin-top:16px;font-size:30px;letter-spacing:2px;text-transform:uppercase;text-align:center}
+  h1 span{color:var(--accent)}
+  .tag{color:var(--muted);margin-top:6px;font-size:14px;text-align:center}
+  .card{margin-top:26px;width:100%;max-width:460px;background:var(--card);
+    border:1px solid var(--line);border-radius:16px;padding:24px 22px;
+    box-shadow:0 12px 40px rgba(0,0,0,.45)}
+  label{display:block;font-size:13px;color:var(--muted);margin-bottom:8px;letter-spacing:.4px}
+  input{width:100%;padding:13px 14px;font-size:17px;border-radius:10px;border:1px solid var(--line);
+    background:#0c0f16;color:var(--text);outline:none}
+  input:focus{border-color:var(--accent)}
+  .hint{font-size:12px;color:var(--muted);margin-top:7px}
+  button{width:100%;margin-top:16px;padding:13px;font-size:16px;font-weight:600;border:0;border-radius:10px;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;cursor:pointer}
+  button:disabled{opacity:.55;cursor:wait}
+  .hidden{display:none}
+  .codebox{margin-top:6px;text-align:center}
+  .code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:38px;letter-spacing:6px;
+    font-weight:700;color:#fff;background:#0c0f16;border:1px dashed var(--accent);
+    border-radius:12px;padding:14px 6px;margin:10px 0 4px}
+  .status{margin-top:12px;font-size:14px;color:var(--muted);text-align:center;min-height:20px}
+  .status.ok{color:var(--ok)} .status.err{color:var(--err)}
+  ol.steps{margin:14px 0 4px 20px;color:var(--text);font-size:14.5px;line-height:1.65}
+  ol.steps b{color:var(--accent2)}
+  textarea{width:100%;height:118px;margin-top:10px;padding:10px;border-radius:10px;resize:vertical;
+    border:1px solid var(--line);background:#0c0f16;color:#a7f3c9;font-size:11.5px;
+    font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all}
+  .copybtn{background:#1d2230;border:1px solid var(--line)}
+  .warn{margin-top:12px;font-size:13px;color:#ffb3a7;line-height:1.55}
+  .foot{margin-top:26px;max-width:460px;color:var(--muted);font-size:12.5px;line-height:1.6;text-align:center}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--muted);border-top-color:transparent;
+    border-radius:50%;vertical-align:-2px;margin-right:7px;animation:sp 0.8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+  <img class="logo" src="/logo.png" alt="Dark Tech Zone logo">
+  <h1>Dark Zone <span>MD</span></h1>
+  <p class="tag">Connect your WhatsApp and get your SESSION_ID — free, in under a minute.</p>
+
+  <div class="card">
+    <!-- Step 1: number form -->
+    <div id="formBox">
+      <label for="number">WhatsApp number (with country code)</label>
+      <input id="number" type="tel" inputmode="numeric" autocomplete="tel" placeholder="e.g. 923001234567">
+      <p class="hint">Digits only, with country code — no +, no spaces. Example: 92 for Pakistan, 91 for India.</p>
+      <button id="pairBtn" onclick="startPair()">Get Pairing Code</button>
+      <p class="status err" id="formError"></p>
+    </div>
+
+    <!-- Step 2: pairing code + steps -->
+    <div id="codeBox" class="hidden">
+      <label>Your pairing code</label>
+      <div class="code" id="codeText">········</div>
+      <ol class="steps">
+        <li>Open <b>WhatsApp</b> on your phone</li>
+        <li>Go to <b>Settings → Linked Devices → Link a Device</b></li>
+        <li>Tap <b>“Link with phone number instead”</b></li>
+        <li>Enter the code above</li>
+      </ol>
+      <p class="status" id="waitStatus"><span class="spin"></span>Waiting for you to enter the code in WhatsApp…</p>
+    </div>
+
+    <!-- Step 3: SESSION_ID -->
+    <div id="doneBox" class="hidden">
+      <label>✅ Connected! Your SESSION_ID</label>
+      <textarea id="sessionText" readonly></textarea>
+      <button class="copybtn" onclick="copySession(this)">Copy SESSION_ID</button>
+      <p class="status ok">It was also sent to your WhatsApp — check your own chat.</p>
+      <p class="warn">How to use it: paste it into the bot's <b>config.js</b> as <b>SESSION_ID</b>
+        (or set it as the SESSION_ID environment variable on your bot hosting), then start the bot.
+        It connects directly — no pairing needed.<br><br>
+        ⚠️ Keep it secret: anyone with this ID can log in as your WhatsApp number.</p>
+    </div>
+  </div>
+
+  <p class="foot">Your login is never stored on this site — every pairing runs in a temporary
+    session that is deleted the moment pairing finishes or expires.
+    A free tool by <b>Dark Tech Zone</b> — Learn. Build. Secure.</p>
+
+<script>
+  let pollTimer = null;
+  const $ = (id) => document.getElementById(id);
+
+  async function startPair() {
+    const number = $('number').value.replace(/\D/g, '');
+    $('formError').textContent = '';
+    if (!/^\d{10,15}$/.test(number)) {
+      $('formError').textContent = 'Please enter a valid number with country code (10–15 digits).';
+      return;
+    }
+    $('pairBtn').disabled = true;
+    $('pairBtn').textContent = 'Requesting code…';
+    try {
+      const res = await fetch('/pair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ number })
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Something went wrong. Try again.');
+      $('formBox').classList.add('hidden');
+      $('codeBox').classList.remove('hidden');
+      if (data.code) $('codeText').textContent = data.code;
+      pollStatus(data.id, 0);
+    } catch (e) {
+      $('formError').textContent = e.message;
+      $('pairBtn').disabled = false;
+      $('pairBtn').textContent = 'Get Pairing Code';
+    }
+  }
+
+  async function pollStatus(id, tries) {
+    clearTimeout(pollTimer);
+    if (tries > 60) { // ~2.5 minutes
+      $('waitStatus').className = 'status err';
+      $('waitStatus').textContent = 'Timed out. Please refresh the page and request a new code.';
+      return;
+    }
+    try {
+      const res = await fetch('/status/' + id);
+      const data = await res.json();
+      if (data.code) $('codeText').textContent = data.code;
+      if (data.status === 'done') {
+        $('codeBox').classList.add('hidden');
+        $('doneBox').classList.remove('hidden');
+        $('sessionText').value = data.sessionId || '';
+        return;
+      }
+      if (data.status === 'error' || data.status === 'expired') {
+        $('waitStatus').className = 'status err';
+        $('waitStatus').textContent = data.error || 'Pairing failed. Refresh and try again.';
+        return;
+      }
+    } catch { /* network blip — keep polling */ }
+    pollTimer = setTimeout(() => pollStatus(id, tries + 1), 2500);
+  }
+
+  function copySession(btn) {
+    const t = $('sessionText');
+    t.select();
+    const flash = () => {
+      btn.textContent = 'Copied ✓';
+      setTimeout(() => { btn.textContent = 'Copy SESSION_ID'; }, 2000);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t.value).then(flash).catch(() => { document.execCommand('copy'); flash(); });
+    } else {
+      document.execCommand('copy');
+      flash();
+    }
+  }
+
+  $('number').addEventListener('keydown', (e) => { if (e.key === 'Enter') startPair(); });
+</script>
+</body>
+</html>
