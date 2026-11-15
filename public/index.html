@@ -75,7 +75,7 @@
         <li>Tap <b>“Link with phone number instead”</b></li>
         <li>Enter the code above</li>
       </ol>
-      <p class="hint">This code is valid for 5 minutes. Use the code shown right now — an old code will not work.</p>
+      <p class="hint">This code is valid for 10 minutes. Use the code shown right now — an old code will not work.</p>
       <p class="status" id="waitStatus"><span class="spin"></span>Waiting for you to enter the code in WhatsApp…</p>
       <div id="qrBox" class="hidden" style="margin-top:16px;text-align:center">
         <p style="font-size:13px;color:var(--muted)">Code not working? Scan this QR instead:</p>
@@ -106,9 +106,11 @@
 
 <script>
   let pollTimer = null;
+  let autoRetries = 0; // fresh code is auto-requested on expiry (max 3)
   const $ = (id) => document.getElementById(id);
 
   async function startPair() {
+    autoRetries = 0;
     const number = $('number').value.replace(/\D/g, '');
     $('formError').textContent = '';
     if (!/^\d{10,15}$/.test(number)) {
@@ -139,7 +141,7 @@
 
   async function pollStatus(id, tries) {
     clearTimeout(pollTimer);
-    if (tries > 120) { // ~5 minutes
+    if (tries > 240) { // ~10 minutes
       $('waitStatus').className = 'status err';
       $('waitStatus').textContent = 'Timed out. Please refresh the page and request a new code.';
       return;
@@ -167,8 +169,15 @@
         return;
       }
       if (data.status === 'error' || data.status === 'expired') {
-        $('waitStatus').className = 'status err';
-        $('waitStatus').textContent = data.error || 'Pairing failed. Refresh and try again.';
+        if (autoRetries < 3) {
+          autoRetries++;
+          $('waitStatus').className = 'status';
+          $('waitStatus').textContent = 'Code expired — getting a fresh one…';
+          setTimeout(startPair, 1500);
+        } else {
+          $('waitStatus').className = 'status err';
+          $('waitStatus').textContent = data.error || 'Pairing failed. Refresh and try again.';
+        }
         return;
       }
     } catch { /* network blip — keep polling */ }

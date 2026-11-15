@@ -130,7 +130,7 @@ async function baileysPairing(attempt, hooks) {
 // ─── Server factory (startPairing injectable for tests) ──────────────────────
 export function createPairServer(deps = {}) {
   const cfg = {
-    ttlMs: deps.ttlMs ?? 300_000,          // pairing attempt lifetime ~5 min (one-phone flow needs time)
+    ttlMs: deps.ttlMs ?? 600_000,          // pairing attempt lifetime ~10 min (one-phone flow needs time)
     keepMs: deps.keepMs ?? 120_000,        // keep finished record for polling
     cleanupDelayMs: deps.cleanupDelayMs ?? 5_000, // after open: close + delete dir
     rateMax: deps.rateMax ?? 6,            // pair requests per IP per window
@@ -331,7 +331,7 @@ export function createPairServer(deps = {}) {
     for (const a of attempts.values()) {
       if ((a.status === 'starting' || a.status === 'code') && now > a.expiresAt) {
         console.log('pair expired for', maskNumber(a.number));
-        finish(a, 'expired', 'Pairing timed out (5 minutes). Please request a new code.');
+        finish(a, 'expired', 'Pairing timed out (10 minutes). Please request a new code.');
       } else if (a.finishedAt && now > a.finishedAt + cfg.keepMs) {
         if (byNumber.get(a.number) === a.id) byNumber.delete(a.number);
         attempts.delete(a.id);
