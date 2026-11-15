@@ -75,6 +75,7 @@
         <li>Tap <b>“Link with phone number instead”</b></li>
         <li>Enter the code above</li>
       </ol>
+      <p class="hint">This code is valid for 5 minutes. Use the code shown right now — an old code will not work.</p>
       <p class="status" id="waitStatus"><span class="spin"></span>Waiting for you to enter the code in WhatsApp…</p>
       <div id="qrBox" class="hidden" style="margin-top:16px;text-align:center">
         <p style="font-size:13px;color:var(--muted)">Code not working? Scan this QR instead:</p>
@@ -138,7 +139,7 @@
 
   async function pollStatus(id, tries) {
     clearTimeout(pollTimer);
-    if (tries > 60) { // ~2.5 minutes
+    if (tries > 120) { // ~5 minutes
       $('waitStatus').className = 'status err';
       $('waitStatus').textContent = 'Timed out. Please refresh the page and request a new code.';
       return;
@@ -148,6 +149,10 @@
       const data = await res.json();
       if (data.code) $('codeText').textContent = data.code;
       if (data.qr) showQr(data.qr);
+      if (data.codeError) {
+        $('waitStatus').className = 'status err';
+        $('waitStatus').textContent = data.codeError;
+      }
       if (data.status === 'done') {
         $('codeBox').classList.add('hidden');
         $('doneBox').classList.remove('hidden');

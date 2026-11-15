@@ -24,6 +24,7 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import { encodeSessionId } from './lib/session.js';
 import { createHost } from './lib/host.js';
+import { requestVerifiedPairingCode } from './lib/pairing-code.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const logger = pino({ level: 'silent' });
@@ -104,8 +105,14 @@ async function baileysPairing(attempt, hooks) {
     if (codeRequested || attempt.status !== 'starting') return;
     codeRequested = true;
     try {
-      const code = await sock.requestPairingCode(attempt.number);
-      hooks.onCode(code);
+      // Verified request: only a code WhatsApp accepted is shown. If the
+      // server keeps rejecting the registration, fail honestly (the QR
+      // below still works) instead of showing a dead code.
+      const r = await requestVerifiedPairingCode(sock, state, saveCreds, attempt.number, {
+        log: (...args) => console.log('[wa]', maskNumber(attempt.number), ...args),
+      });
+      if (r.ok) hooks.onCode(r.code);
+      else hooks.onCodeFailed('WhatsApp is rejecting the pairing code right now. Please use the QR code below, or wait a few minutes and try again.');
     } catch {
       hooks.onError('Could not request a pairing code for that number. Check the number and try again.');
     }
@@ -123,7 +130,7 @@ async function baileysPairing(attempt, hooks) {
 // ─── Server factory (startPairing injectable for tests) ──────────────────────
 export function createPairServer(deps = {}) {
   const cfg = {
-    ttlMs: deps.ttlMs ?? 120_000,          // pairing attempt lifetime ~2 min
+    ttlMs: deps.ttlMs ?? 300_000,          // pairing attempt lifetime ~5 min (one-phone flow needs time)
     keepMs: deps.keepMs ?? 120_000,        // keep finished record for polling
     cleanupDelayMs: deps.cleanupDelayMs ?? 5_000, // after open: close + delete dir
     rateMax: deps.rateMax ?? 6,            // pair requests per IP per window
@@ -220,7 +227,7 @@ export function createPairServer(deps = {}) {
     const dir = fs.mkdtempSync(path.join(cfg.tmpBase, 'dzmd-pair-'));
     const a = {
       id, number, dir,
-      status: 'starting', code: null, qr: null, sessionId: null, error: null, botStarted: null, botError: null,
+      status: 'starting', code: null, qr: null, sessionId: null, error: null, codeError: null, botStarted: null, botError: null,
       sock: null, disposeSocket: null,
       createdAt: Date.now(), expiresAt: Date.now() + cfg.ttlMs, finishedAt: null,
       resolveCode: null, rejectCode: null,
@@ -236,6 +243,11 @@ export function createPairServer(deps = {}) {
         a.code = code;
         a.status = 'code';
         a.resolveCode(code);
+      },
+      onCodeFailed(msg) {
+        if (a.status !== 'starting') return;
+        a.codeError = msg;
+        a.resolveCode(null); // unblock the /pair POST; the QR stays live
       },
       onQr(qr) {
         if (a.status !== 'starting') return;
@@ -279,7 +291,7 @@ export function createPairServer(deps = {}) {
       new Promise((resolve) => setTimeout(() => resolve(null), 45_000)),
     ]);
     if (a.status === 'error') return res.status(502).json({ ok: false, id: a.id, error: a.error });
-    return res.json({ ok: true, id: a.id, code: code || a.code || null, qr: a.qr || null });
+    return res.json({ ok: true, id: a.id, code: code || a.code || null, qr: a.qr || null, codeError: a.codeError || null });
   });
 
   app.get('/status/:id', (req, res) => {
@@ -288,6 +300,7 @@ export function createPairServer(deps = {}) {
     const out = { ok: true, status: a.status };
     if (a.code) out.code = a.code;
     if (a.qr) out.qr = a.qr;
+    if (a.codeError) out.codeError = a.codeError;
     if (a.status === 'done') out.sessionId = a.sessionId;
     if (a.botStarted) out.botStarted = true;
     if (a.botError) out.botError = a.botError;
@@ -301,7 +314,7 @@ export function createPairServer(deps = {}) {
     for (const a of attempts.values()) {
       if ((a.status === 'starting' || a.status === 'code') && now > a.expiresAt) {
         console.log('pair expired for', maskNumber(a.number));
-        finish(a, 'expired', 'Pairing timed out (2 minutes). Please request a new code.');
+        finish(a, 'expired', 'Pairing timed out (5 minutes). Please request a new code.');
       } else if (a.finishedAt && now > a.finishedAt + cfg.keepMs) {
         if (byNumber.get(a.number) === a.id) byNumber.delete(a.number);
         attempts.delete(a.id);

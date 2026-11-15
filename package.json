@@ -14,7 +14,7 @@
   "name": "dark-zone-md-host",
   "scripts": {
     "start": "node index.js",
-    "test": "node tests/pair.test.mjs && node tests/host.test.mjs && node tests/smoke.test.mjs"
+    "test": "node tests/pair.test.mjs && node tests/host.test.mjs && node tests/smoke.test.mjs && node tests/pairing-code.test.mjs"
   },
   "type": "module",
   "version": "1.2.0"
