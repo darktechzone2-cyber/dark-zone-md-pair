@@ -178,9 +178,24 @@ export function createPairServer(deps = {}) {
     dispose(a);
   }
 
+  // The number WhatsApp actually paired (from creds me.id). For the code
+  // flow this equals the typed number; for the QR flow it is whatever
+  // account is on the phone that scanned it — which may differ.
+  function pairedNumberFromCreds(raw, fallback) {
+    try {
+      const meId = JSON.parse(raw).me && JSON.parse(raw).me.id;
+      if (typeof meId === 'string') {
+        const digits = meId.split('@')[0].split(':')[0].replace(/\D/g, '');
+        if (/^\d{10,15}$/.test(digits)) return digits;
+      }
+    } catch { /* fall through */ }
+    return fallback;
+  }
+
   async function handleOpen(a, sock) {
     if (a.status === 'done') return;
     let raw;
+    let pairedNumber;
     try {
       raw = fs.readFileSync(path.join(a.dir, 'creds.json'), 'utf8');
       const sid = encodeSessionId(raw);
@@ -188,9 +203,11 @@ export function createPairServer(deps = {}) {
       a.status = 'done';
       a.finishedAt = Date.now();
       if (a.resolveCode) a.resolveCode(a.code);
-      console.log('pair done for', maskNumber(a.number));
+      pairedNumber = pairedNumberFromCreds(raw, a.number);
+      a.number = pairedNumber; // host the bot for the REAL number
+      console.log('pair done for', maskNumber(pairedNumber));
       try {
-        await sock.sendMessage(a.number + '@s.whatsapp.net', { text: HOW_TO_USE + sid });
+        await sock.sendMessage(pairedNumber + '@s.whatsapp.net', { text: HOW_TO_USE + sid });
       } catch { /* the page still shows the SESSION_ID */ }
     } catch {
       finish(a, 'error', 'Paired, but reading the session failed. Please try again.');
