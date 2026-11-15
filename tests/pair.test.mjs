@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const { createPairServer } = await import('../index.js');
 const pairSession = await import('../lib/session.js');
-const botSession = await import('../../dark-zone-md/lib/session.js');
+const botSession = await import('../bot/lib/session.js');
 
 const FAKE_CREDS = {
   noiseKey: { private: 'fake', public: 'fake' },

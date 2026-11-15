@@ -3,9 +3,12 @@
 // 8-digit pairing code, links the device in WhatsApp, and receives a
 // SESSION_ID ("DZMD~...") — shown on the page AND sent to their own WhatsApp.
 //
-// Privacy by design: every pairing runs in a unique temp dir that is DELETED
-// when pairing finishes or expires (~2 min). The site keeps no database,
-// retains no credentials, and never logs numbers, codes or session ids.
+// Privacy: a pairing session is kept ONLY to run that number's bot on this
+// host (sessions live under host-sessions/<number>/, deleted if the number
+// logs out). The pairing attempt itself still runs in a unique temp dir that
+// is DELETED when pairing finishes or expires. The user also gets their
+// SESSION_ID, so they can move the bot to their own hosting any time.
+// Numbers, codes and session ids are never logged.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -20,6 +23,7 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
 } from '@whiskeysockets/baileys';
 import { encodeSessionId } from './lib/session.js';
+import { createHost } from './lib/host.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const logger = pino({ level: 'silent' });
@@ -127,6 +131,7 @@ export function createPairServer(deps = {}) {
     tmpBase: deps.tmpBase || os.tmpdir(),
     startPairing: deps.startPairing || baileysPairing,
     sweepMs: deps.sweepMs ?? 5_000,
+    host: deps.host || null, // bot host (null = pairing only, e.g. tests)
   };
 
   const attempts = new Map();  // id -> attempt
@@ -149,7 +154,7 @@ export function createPairServer(deps = {}) {
   app.use(express.json({ limit: '8kb' }));
   app.use(express.static(path.join(__dirname, 'public')));
 
-  app.get('/health', (req, res) => res.json({ ok: true, service: 'dark-zone-md-pair' }));
+  app.get('/health', (req, res) => res.json({ ok: true, service: 'dark-zone-md-pair', bots: cfg.host ? cfg.host.activeCount() : 0, hosted: cfg.host ? cfg.host.hostedCount() : 0, maxBots: cfg.host ? cfg.host.maxBots : 0 }));
 
   function dispose(a) {
     try { a.disposeSocket?.(); } catch { /* ignore */ }
@@ -168,8 +173,9 @@ export function createPairServer(deps = {}) {
 
   async function handleOpen(a, sock) {
     if (a.status === 'done') return;
+    let raw;
     try {
-      const raw = fs.readFileSync(path.join(a.dir, 'creds.json'), 'utf8');
+      raw = fs.readFileSync(path.join(a.dir, 'creds.json'), 'utf8');
       const sid = encodeSessionId(raw);
       a.sessionId = sid;
       a.status = 'done';
@@ -183,7 +189,25 @@ export function createPairServer(deps = {}) {
       finish(a, 'error', 'Paired, but reading the session failed. Please try again.');
       return;
     }
-    // Close the socket and delete the temp auth dir — nothing is retained.
+    // Host the bot: persist the session, close the pairing socket FIRST
+    // (so the bot child is the only live connection on these creds),
+    // then start the bot. The SESSION_ID above still works on the user's
+    // own hosting too — hosting here is a convenience, not a lock-in.
+    if (cfg.host) {
+      try {
+        cfg.host.saveSession(a.number, raw);
+        dispose(a);
+        const r = cfg.host.startBot(a.number);
+        a.botStarted = !!r.ok;
+        a.botError = r.ok ? null : (r.error || 'Bot could not start.');
+        console.log('bot start for', maskNumber(a.number), r.ok ? 'ok' : ('failed: ' + a.botError));
+      } catch (e) {
+        a.botStarted = false;
+        a.botError = 'Bot could not start. Your SESSION_ID above still works on your own hosting.';
+        console.log('bot start failed for', maskNumber(a.number), e && e.message ? e.message : e);
+      }
+    }
+    // Safety net: close the socket and delete the temp auth dir if still there.
     setTimeout(() => dispose(a), cfg.cleanupDelayMs);
   }
 
@@ -196,7 +220,7 @@ export function createPairServer(deps = {}) {
     const dir = fs.mkdtempSync(path.join(cfg.tmpBase, 'dzmd-pair-'));
     const a = {
       id, number, dir,
-      status: 'starting', code: null, qr: null, sessionId: null, error: null,
+      status: 'starting', code: null, qr: null, sessionId: null, error: null, botStarted: null, botError: null,
       sock: null, disposeSocket: null,
       createdAt: Date.now(), expiresAt: Date.now() + cfg.ttlMs, finishedAt: null,
       resolveCode: null, rejectCode: null,
@@ -245,6 +269,9 @@ export function createPairServer(deps = {}) {
     if (!/^\d{10,15}$/.test(digits)) {
       return res.status(400).json({ ok: false, error: 'Enter a valid WhatsApp number with country code (10–15 digits, e.g. 923001234567).' });
     }
+    if (cfg.host && cfg.host.isFull() && !cfg.host.isHosted(digits)) {
+      return res.status(503).json({ ok: false, error: 'The host is full right now — all bot slots are taken. Please try again later.' });
+    }
     const a = startAttempt(digits);
     // Wait briefly for the pairing code; if it is slow, the page polls /status.
     const code = await Promise.race([
@@ -262,6 +289,8 @@ export function createPairServer(deps = {}) {
     if (a.code) out.code = a.code;
     if (a.qr) out.qr = a.qr;
     if (a.status === 'done') out.sessionId = a.sessionId;
+    if (a.botStarted) out.botStarted = true;
+    if (a.botError) out.botError = a.botError;
     if (a.error) out.error = a.error;
     return res.json(out);
   });
@@ -290,10 +319,34 @@ export function createPairServer(deps = {}) {
 // ─── Entry point ─────────────────────────────────────────────────────────────
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
-  const { app } = createPairServer();
+  const host = createHost({
+    sessionsDir: path.join(__dirname, 'host-sessions'),
+    dataDir: path.join(__dirname, 'host-data'),
+    botEntry: path.join(__dirname, 'bot', 'index.js'),
+    botCwd: path.join(__dirname, 'bot'),
+    maxBots: Number(process.env.HOST_MAX_BOTS || 6),
+    log: (...args) => console.log(...args),
+  });
+  // Startup self-check: confirm the bot engine files are present (nested
+  // paths are hard to verify from the hosting panel, so the host logs it).
+  const botCheck = (() => {
+    try {
+      const libFiles = fs.readdirSync(path.join(__dirname, 'bot', 'lib')).filter((f) => f.endsWith('.js'));
+      const pluginFiles = fs.readdirSync(path.join(__dirname, 'bot', 'plugins')).filter((f) => f.endsWith('.js'));
+      return {
+        entryOk: fs.existsSync(path.join(__dirname, 'bot', 'index.js')),
+        lib: libFiles.length, plugins: pluginFiles.length,
+      };
+    } catch (e) {
+      return { entryOk: false, lib: 0, plugins: 0, error: e.message };
+    }
+  })();
+  console.log('bot engine check:', JSON.stringify(botCheck));
+  const { app } = createPairServer({ host });
+  host.reloadAll();
   const port = process.env.PORT || 3000;
   app.listen(port, () => {
-    console.log(`\n🤖 Dark Zone MD Pair — listening on port ${port}`);
-    console.log('   Open the page, enter a WhatsApp number, get a pairing code.\n');
+    console.log(`\n🤖 Dark Zone MD Pair + Host — listening on port ${port}`);
+    console.log('   Pair a number and its bot starts automatically.\n');
   });
 }

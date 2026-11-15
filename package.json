@@ -1,1 +1,21 @@
-{"dependencies":{"@whiskeysockets/baileys":"^7.0.0-rc14","express":"^4.21.2","pino":"^9.0.0"},"description":"Dark Zone MD — public pairing website: enter a WhatsApp number, get a pairing code, receive a DZMD~ SESSION_ID (Jawad MD / Prince MD model). Stores nothing.","engines":{"node":">=20"},"license":"MIT","main":"index.js","name":"dark-zone-md-pair","scripts":{"start":"node index.js","test":"node tests/pair.test.mjs"},"type":"module","version":"1.1.0"}
+{
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "express": "^4.21.2",
+    "pino": "^9.0.0",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "description": "Dark Zone MD \u2014 Pair & Host: pair a WhatsApp number and its MD bot starts automatically and stays active. Built on the DTZ MD bot (338 commands, no bug/crash/NSFW).",
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "main": "index.js",
+  "name": "dark-zone-md-host",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node tests/pair.test.mjs && node tests/host.test.mjs && node tests/smoke.test.mjs"
+  },
+  "type": "module",
+  "version": "1.2.0"
+}

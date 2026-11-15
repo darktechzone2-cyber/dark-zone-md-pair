@@ -53,7 +53,7 @@
 <body>
   <img class="logo" src="/logo.png" alt="Dark Tech Zone logo">
   <h1>Dark Zone <span>MD</span></h1>
-  <p class="tag">Connect your WhatsApp and get your SESSION_ID — free, in under a minute.</p>
+  <p class="tag">Pair your number and your Dark Zone MD bot starts automatically — free.</p>
 
   <div class="card">
     <!-- Step 1: number form -->
@@ -84,12 +84,14 @@
       </div>
     </div>
 
-    <!-- Step 3: SESSION_ID -->
+    <!-- Step 3: bot started + SESSION_ID backup -->
     <div id="doneBox" class="hidden">
-      <label>✅ Connected! Your SESSION_ID</label>
+      <label>✅ Connected! Your bot is starting…</label>
+      <p class="status ok" id="botStatus">Your Dark Zone MD bot is now running on Dark Zone hosting — send <b>.menu</b> to it on WhatsApp.</p>
+      <label style="margin-top:14px">Your SESSION_ID (backup — also sent to your WhatsApp)</label>
       <textarea id="sessionText" readonly></textarea>
       <button class="copybtn" onclick="copySession(this)">Copy SESSION_ID</button>
-      <p class="status ok">It was also sent to your WhatsApp — check your own chat.</p>
+      <p class="status ok">Keep it secret — anyone with it can log in as your WhatsApp number.</p>
       <p class="warn">How to use it: paste it into the bot's <b>config.js</b> as <b>SESSION_ID</b>
         (or set it as the SESSION_ID environment variable on your bot hosting), then start the bot.
         It connects directly — no pairing needed.<br><br>
@@ -150,6 +152,13 @@
         $('codeBox').classList.add('hidden');
         $('doneBox').classList.remove('hidden');
         $('sessionText').value = data.sessionId || '';
+        if (data.botError) {
+          $('botStatus').className = 'status err';
+          $('botStatus').textContent = data.botError + ' Your SESSION_ID above still works on your own hosting.';
+        } else if (data.botStarted) {
+          $('botStatus').className = 'status ok';
+          $('botStatus').textContent = 'Your Dark Zone MD bot is now active — send .menu to it on WhatsApp.';
+        }
         return;
       }
       if (data.status === 'error' || data.status === 'expired') {
