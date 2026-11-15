@@ -44,6 +44,10 @@ async function baileysPairing(attempt, hooks) {
   const { state, saveCreds } = await useMultiFileAuthState(attempt.dir);
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 0] }));
   let reconnects = 0;
+  let qrSeen = false;
+  let codeRequested = false;
+  let settleTimer = null;
+  let noQrTimer = null;
 
   const connect = () => {
     if (attempt.status === 'done' || attempt.status === 'expired') return;
@@ -52,13 +56,21 @@ async function baileysPairing(attempt, hooks) {
       logger,
       auth: state,
       printQRInTerminal: false,
-      browser: ['Dark Zone MD Pair', 'Chrome', '1.1.0'],
+      browser: ['Ubuntu', 'Edge', '20.04'],
       syncFullHistory: false,
       markOnlineOnConnect: false,
     });
     attempt.sock = sock;
     sock.ev.on('creds.update', saveCreds);
     sock.ev.on('connection.update', (u) => {
+      console.log('[wa]', maskNumber(attempt.number), 'update:', u.connection || '', u.qr ? 'qr=yes' : '', u.lastDisconnect?.error?.output?.statusCode ?? '');
+      if (u.qr && !qrSeen) {
+        qrSeen = true;
+        hooks.onQr(u.qr);
+        // Settle ~2.5s after the handshake produces a qr (mirrors the old
+        // working 3s-from-creation timing) before asking for the code.
+        settleTimer = setTimeout(() => requestCode(sock), 2500);
+      }
       if (u.connection === 'open') hooks.onOpen(sock);
       if (u.connection === 'close') {
         if (attempt.status === 'done' || attempt.status === 'expired') return;
@@ -73,20 +85,31 @@ async function baileysPairing(attempt, hooks) {
         hooks.onError('Connection closed before pairing completed. Please try again.');
       }
     });
-    if (!state.creds.registered) {
-      setTimeout(async () => {
-        if (attempt.status !== 'starting' || attempt.code) return;
-        try {
-          const code = await sock.requestPairingCode(attempt.number);
-          hooks.onCode(code);
-        } catch {
-          hooks.onError('Could not request a pairing code for that number. Check the number and try again.');
+    if (!state.creds.registered && !qrSeen) {
+      // If the handshake never produces a qr, fail honestly instead of
+      // issuing a code WhatsApp never registered.
+      noQrTimer = setTimeout(() => {
+        if (!qrSeen && !codeRequested && attempt.status === 'starting') {
+          hooks.onError('WhatsApp did not answer the pairing handshake. Please try again.');
         }
-      }, 1500);
+      }, 15000);
     }
   };
 
+  async function requestCode(sock) {
+    if (codeRequested || attempt.status !== 'starting') return;
+    codeRequested = true;
+    try {
+      const code = await sock.requestPairingCode(attempt.number);
+      hooks.onCode(code);
+    } catch {
+      hooks.onError('Could not request a pairing code for that number. Check the number and try again.');
+    }
+  }
+
   attempt.disposeSocket = () => {
+    try { clearTimeout(settleTimer); } catch { /* ignore */ }
+    try { clearTimeout(noQrTimer); } catch { /* ignore */ }
     try { attempt.sock?.end?.(); } catch { /* ignore */ }
     try { attempt.sock?.ws?.close?.(); } catch { /* ignore */ }
   };
@@ -173,7 +196,7 @@ export function createPairServer(deps = {}) {
     const dir = fs.mkdtempSync(path.join(cfg.tmpBase, 'dzmd-pair-'));
     const a = {
       id, number, dir,
-      status: 'starting', code: null, sessionId: null, error: null,
+      status: 'starting', code: null, qr: null, sessionId: null, error: null,
       sock: null, disposeSocket: null,
       createdAt: Date.now(), expiresAt: Date.now() + cfg.ttlMs, finishedAt: null,
       resolveCode: null, rejectCode: null,
@@ -189,6 +212,10 @@ export function createPairServer(deps = {}) {
         a.code = code;
         a.status = 'code';
         a.resolveCode(code);
+      },
+      onQr(qr) {
+        if (a.status !== 'starting') return;
+        a.qr = qr;
       },
       onOpen(sock) { handleOpen(a, sock); },
       onError(msg) { finish(a, 'error', msg); },
@@ -225,7 +252,7 @@ export function createPairServer(deps = {}) {
       new Promise((resolve) => setTimeout(() => resolve(null), 45_000)),
     ]);
     if (a.status === 'error') return res.status(502).json({ ok: false, id: a.id, error: a.error });
-    return res.json({ ok: true, id: a.id, code: code || a.code || null });
+    return res.json({ ok: true, id: a.id, code: code || a.code || null, qr: a.qr || null });
   });
 
   app.get('/status/:id', (req, res) => {
@@ -233,6 +260,7 @@ export function createPairServer(deps = {}) {
     if (!a) return res.status(404).json({ ok: false, error: 'Pairing session not found or already cleaned up.' });
     const out = { ok: true, status: a.status };
     if (a.code) out.code = a.code;
+    if (a.qr) out.qr = a.qr;
     if (a.status === 'done') out.sessionId = a.sessionId;
     if (a.error) out.error = a.error;
     return res.json(out);
