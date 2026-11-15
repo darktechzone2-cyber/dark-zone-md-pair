@@ -61,7 +61,7 @@ async function baileysPairing(attempt, hooks) {
       logger,
       auth: state,
       printQRInTerminal: false,
-      browser: ['Ubuntu', 'Edge', '20.04'],
+      browser: ['Windows', 'Chrome', '10.0'],
       syncFullHistory: false,
       markOnlineOnConnect: false,
     });

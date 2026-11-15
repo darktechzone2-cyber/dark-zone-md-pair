@@ -44,8 +44,8 @@ const NUMBER = '923001234567';
   const reg = node.content[0];
   check('companion_hello registration', reg.tag === 'link_code_companion_reg' && reg.attrs.stage === 'companion_hello' && reg.attrs.jid === NUMBER + '@s.whatsapp.net');
   const tags = Object.fromEntries(reg.content.map((c) => [c.tag, c.content]));
-  check('platform id is Edge (2)', tags['companion_platform_id'] === '2');
-  check('platform display is Edge (Ubuntu)', tags['companion_platform_display'] === 'Edge (Ubuntu)');
+  check('platform id is Chrome (1)', tags['companion_platform_id'] === '1');
+  check('platform display is Chrome (Windows)', tags['companion_platform_display'] === 'Chrome (Windows)');
   check('nonce is 0', tags['link_code_pairing_nonce'] === '0');
   check('wrapped ephemeral key is 32+16+32 bytes', Buffer.isBuffer(tags['link_code_pairing_wrapped_companion_ephemeral_pub']) && tags['link_code_pairing_wrapped_companion_ephemeral_pub'].length === 80);
 }

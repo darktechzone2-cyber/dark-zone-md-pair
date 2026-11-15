@@ -166,7 +166,7 @@ await shutdown(s4);
 // The custom 'Dark Zone MD Pair' device identity is a live suspect for
 // WhatsApp's 400 on companion registration; the old working identity must stay.
 const pairSrc = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
-check('browser identity is Ubuntu/Edge (old working identity)', pairSrc.includes("['Ubuntu', 'Edge', '20.04']"));
+check('browser identity is Windows/Chrome (distinct from the 19:23 linked device)', pairSrc.includes("['Windows', 'Chrome', '10.0']"));
 check('old custom device identity is gone', !pairSrc.includes("'Dark Zone MD Pair', 'Chrome'"));
 check('code request is qr-gated (no fixed-timeout request)', !pairSrc.includes('}, 1500);') && pairSrc.includes('hooks.onQr'));
 
